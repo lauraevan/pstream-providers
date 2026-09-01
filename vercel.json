@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "player-demo/index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "player-demo/api/stream.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/stream",
+      "dest": "/player-demo/api/stream.ts"
+    },
+    {
+      "src": "/",
+      "dest": "/player-demo/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/player-demo/index.html"
+    }
+  ]
+}
