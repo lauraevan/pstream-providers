@@ -12,18 +12,33 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect Vercel redirect
+      - name: Check public player page
         run: |
-          URL="https://pstream-player-demo-aw2tzmy6j-atop5.vercel.app"
-          code=$(curl -sS -D headers.txt -o body.html -w '%{http_code}' "$URL/" || true)
-          echo "initial HTTP $code"
-          echo "--- response headers ---"
-          cat headers.txt
-          echo "--- title / body markers ---"
-          grep -oi '<title[^>]*>[^<]*</title>' body.html | head -3 || true
-          grep -Eoi 'vercel[^<]{0,120}|authentication[^<]{0,120}|login[^<]{0,120}|deployment[^<]{0,120}' body.html | head -20 || true
+          URL="https://pstream-player-demo-atop5.vercel.app"
+          for i in 1 2 3 4 5 6 7 8; do
+            code=$(curl -sS -o page.html -w '%{http_code}' "$URL/" || true)
+            echo "homepage attempt $i -> HTTP $code"
+            if [ "$code" = "200" ] && grep -q "P-Stream Player Demo" page.html; then
+              echo "Player page is public and correct"
+              exit 0
+            fi
+            if [ "$code" = "302" ]; then
+              echo "Unexpected protection redirect"
+              curl -sS -D - -o /dev/null "$URL/" || true
+            else
+              head -c 500 page.html || true
+              echo
+            fi
+            sleep 8
+          done
+          echo "Player page did not become ready"
+          exit 1
 
-      - name: Follow redirect and print final URL
+      - name: Check API function boots publicly
         run: |
-          URL="https://pstream-player-demo-aw2tzmy6j-atop5.vercel.app"
-          curl -L -sS -o /dev/null -w 'final URL: %{url_effective}\nfinal HTTP: %{http_code}\n' "$URL/"
+          URL="https://pstream-player-demo-atop5.vercel.app"
+          code=$(curl -sS -o api.json -w '%{http_code}' "$URL/api/stream?id=x" || true)
+          echo "api -> HTTP $code"
+          cat api.json || true
+          test "$code" = "400"
+          grep -q "numeric TMDB" api.json
