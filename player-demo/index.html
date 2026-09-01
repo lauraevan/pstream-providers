@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#080808" />
+  <title>P-Stream Provider Player</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #080808; color: #f5f5f5; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .shell { width: min(1080px, 100%); }
+    .top { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+    .eyebrow { color: #888; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 8px; }
+    h1 { font-size: clamp(28px, 5vw, 52px); line-height: .95; margin: 0; font-weight: 650; letter-spacing: -.045em; }
+    .badge { border: 1px solid #272727; background: #111; color: #aaa; padding: 8px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+    .panel { background: #0d0d0d; border: 1px solid #202020; border-radius: 18px; overflow: hidden; }
+    .controls { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px; border-bottom: 1px solid #1d1d1d; }
+    input { width: 100%; min-width: 0; border: 1px solid #2a2a2a; background: #121212; color: #fff; border-radius: 12px; padding: 13px 14px; font: inherit; outline: none; transition: border-color .18s ease, background .18s ease; }
+    input:focus { border-color: #555; background: #151515; }
+    input::placeholder { color: #666; }
+    button { border: 1px solid #e8e8e8; background: #f3f3f3; color: #080808; border-radius: 12px; padding: 0 18px; min-height: 46px; font: inherit; font-weight: 650; cursor: pointer; transition: transform .16s ease, opacity .16s ease; }
+    button:active { transform: scale(.98); }
+    button:disabled { opacity: .45; cursor: default; }
+    .stage { aspect-ratio: 16 / 9; background: #030303; position: relative; display: grid; place-items: center; }
+    video { width: 100%; height: 100%; background: #000; display: none; }
+    .empty { text-align: center; padding: 20px; color: #777; max-width: 460px; }
+    .empty strong { display: block; color: #d7d7d7; font-size: 16px; margin-bottom: 7px; font-weight: 580; }
+    .spinner { width: 22px; height: 22px; border: 2px solid #272727; border-top-color: #e6e6e6; border-radius: 50%; animation: spin .75s linear infinite; margin: 0 auto 13px; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .meta { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-top: 1px solid #1d1d1d; color: #858585; font-size: 13px; }
+    .movie { min-width: 0; }
+    .movie-title { color: #e6e6e6; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .movie-sub { margin-top: 3px; }
+    .source { text-align: right; white-space: nowrap; }
+    .status { margin-top: 12px; color: #777; font-size: 12px; min-height: 18px; }
+    .error { color: #d58b8b; }
+    @media (max-width: 620px) {
+      body { padding: 14px; align-items: start; }
+      .top { align-items: start; flex-direction: column; }
+      .controls { grid-template-columns: 1fr; }
+      button { min-height: 48px; }
+      .meta { align-items: start; flex-direction: column; }
+      .source { text-align: left; }
+      .stage { aspect-ratio: 16/10; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="top">
+      <div>
+        <div class="eyebrow">P-Stream Providers</div>
+        <h1>Player demo.</h1>
+      </div>
+      <div class="badge" id="countBadge">provider runner</div>
+    </div>
+
+    <section class="panel">
+      <form class="controls" id="form">
+        <input id="tmdb" inputmode="numeric" autocomplete="off" placeholder="Enter a TMDB movie ID — e.g. 556574" aria-label="TMDB movie ID" />
+        <button id="playButton" type="submit">Find stream</button>
+      </form>
+
+      <div class="stage" id="stage">
+        <video id="video" controls playsinline preload="metadata"></video>
+        <div class="empty" id="empty">
+          <div class="spinner" id="spinner"></div>
+          <strong id="emptyTitle">Enter a TMDB movie ID</strong>
+          <span id="emptyText">The backend resolves the movie, scans your provider package, then sends the first browser-playable stream here.</span>
+        </div>
+      </div>
+
+      <div class="meta">
+        <div class="movie">
+          <div class="movie-title" id="movieTitle">Nothing loaded</div>
+          <div class="movie-sub" id="movieSub">TMDB → providers → player</div>
+        </div>
+        <div class="source" id="sourceText">—</div>
+      </div>
+    </section>
+
+    <div class="status" id="status"></div>
+  </main>
+
+  <script>
+    const form = document.getElementById('form');
+    const input = document.getElementById('tmdb');
+    const button = document.getElementById('playButton');
+    const video = document.getElementById('video');
+    const empty = document.getElementById('empty');
+    const spinner = document.getElementById('spinner');
+    const emptyTitle = document.getElementById('emptyTitle');
+    const emptyText = document.getElementById('emptyText');
+    const movieTitle = document.getElementById('movieTitle');
+    const movieSub = document.getElementById('movieSub');
+    const sourceText = document.getElementById('sourceText');
+    const status = document.getElementById('status');
+    const countBadge = document.getElementById('countBadge');
+
+    let hls = null;
+    let statusTimer = null;
+
+    function setLoading(loading) {
+      button.disabled = loading;
+      input.disabled = loading;
+      spinner.style.display = loading ? 'block' : 'none';
+      if (loading) {
+        video.pause();
+        video.style.display = 'none';
+        empty.style.display = 'block';
+        emptyTitle.textContent = 'Scanning providers';
+        emptyText.textContent = 'Resolving TMDB metadata and trying browser-playable sources…';
+        const steps = ['Resolving TMDB metadata…', 'Starting provider runner…', 'Checking sources and embeds…', 'Looking for a playable stream…'];
+        let i = 0;
+        status.textContent = steps[0];
+        clearInterval(statusTimer);
+        statusTimer = setInterval(() => {
+          i = Math.min(i + 1, steps.length - 1);
+          status.textContent = steps[i];
+        }, 1800);
+      } else {
+        clearInterval(statusTimer);
+        statusTimer = null;
+      }
+    }
+
+    function resetPlayer() {
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+      video.pause();
+      video.removeAttribute('src');
+      video.querySelectorAll('track').forEach((track) => track.remove());
+      video.load();
+    }
+
+    function bestFile(stream) {
+      const qualities = stream.qualities || {};
+      const order = ['4k', '1080', '720', '480', '360', 'unknown'];
+      for (const q of order) {
+        if (qualities[q] && qualities[q].url) return { quality: q, url: qualities[q].url };
+      }
+      const first = Object.entries(qualities).find(([, value]) => value && value.url);
+      return first ? { quality: first[0], url: first[1].url } : null;
+    }
+
+    function addCaptions(stream) {
+      for (const caption of stream.captions || []) {
+        if (caption.type !== 'vtt' || caption.hasCorsRestrictions || !caption.url) continue;
+        const track = document.createElement('track');
+        track.kind = 'subtitles';
+        track.srclang = caption.language || 'und';
+        track.label = (caption.language || 'Subtitle').toUpperCase();
+        track.src = caption.url;
+        video.appendChild(track);
+      }
+    }
+
+    async function attachStream(stream) {
+      resetPlayer();
+      let detail = stream.type.toUpperCase();
+
+      if (stream.type === 'hls') {
+        if (!stream.playlist) throw new Error('Provider returned an HLS stream without a playlist.');
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = stream.playlist;
+        } else if (window.Hls && Hls.isSupported()) {
+          hls = new Hls({ enableWorker: true, backBufferLength: 45 });
+          hls.loadSource(stream.playlist);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (!data.fatal) return;
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+            else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+            else hls.destroy();
+          });
+        } else {
+          throw new Error('This browser cannot play HLS streams.');
+        }
+      } else if (stream.type === 'file') {
+        const file = bestFile(stream);
+        if (!file) throw new Error('Provider returned a file stream without a playable quality.');
+        video.src = file.url;
+        detail = `FILE · ${file.quality}`;
+      } else {
+        throw new Error(`Unsupported stream type: ${stream.type}`);
+      }
+
+      addCaptions(stream);
+      video.style.display = 'block';
+      empty.style.display = 'none';
+      video.load();
+      try { await video.play(); } catch (_) {}
+      return detail;
+    }
+
+    async function run(id) {
+      if (!/^\d+$/.test(id)) {
+        status.textContent = 'Enter a numeric TMDB movie ID.';
+        status.className = 'status error';
+        return;
+      }
+
+      setLoading(true);
+      status.className = 'status';
+      resetPlayer();
+
+      try {
+        const response = await fetch(`/api/stream?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+        if (!data.stream) throw new Error('No playable stream was returned.');
+
+        const detail = await attachStream(data.stream);
+        movieTitle.textContent = `${data.movie.title} (${data.movie.releaseYear})`;
+        movieSub.textContent = `TMDB ${data.movie.tmdbId}`;
+        sourceText.textContent = data.embedId ? `${data.sourceId} → ${data.embedId} · ${detail}` : `${data.sourceId} · ${detail}`;
+        countBadge.textContent = `${data.providerCount || 'many'} sources`;
+        status.textContent = `Loaded from ${data.sourceId}${data.embedId ? ` / ${data.embedId}` : ''}.`;
+      } catch (error) {
+        video.style.display = 'none';
+        empty.style.display = 'block';
+        emptyTitle.textContent = 'No stream loaded';
+        emptyText.textContent = error.message || 'The provider runner could not find a browser-playable stream.';
+        sourceText.textContent = '—';
+        status.textContent = error.message || 'Failed to load stream.';
+        status.className = 'status error';
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const id = input.value.trim();
+      const url = new URL(location.href);
+      if (id) url.searchParams.set('id', id); else url.searchParams.delete('id');
+      history.replaceState(null, '', url);
+      run(id);
+    });
+
+    const initialId = new URL(location.href).searchParams.get('id');
+    if (initialId) {
+      input.value = initialId;
+      run(initialId);
+    }
+  </script>
+</body>
+</html>
