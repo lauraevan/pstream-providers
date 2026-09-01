@@ -12,23 +12,18 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect player page
+      - name: Inspect Vercel redirect
         run: |
           URL="https://pstream-player-demo-aw2tzmy6j-atop5.vercel.app"
-          code=$(curl -L -sS -o page.html -w '%{http_code}' "$URL/" || true)
-          echo "homepage -> HTTP $code"
-          echo "--- response preview ---"
-          head -c 2500 page.html || true
-          echo
-          echo "--- end response preview ---"
-          test "$code" = "200"
+          code=$(curl -sS -D headers.txt -o body.html -w '%{http_code}' "$URL/" || true)
+          echo "initial HTTP $code"
+          echo "--- response headers ---"
+          cat headers.txt
+          echo "--- title / body markers ---"
+          grep -oi '<title[^>]*>[^<]*</title>' body.html | head -3 || true
+          grep -Eoi 'vercel[^<]{0,120}|authentication[^<]{0,120}|login[^<]{0,120}|deployment[^<]{0,120}' body.html | head -20 || true
 
-      - name: Inspect API function
+      - name: Follow redirect and print final URL
         run: |
           URL="https://pstream-player-demo-aw2tzmy6j-atop5.vercel.app"
-          code=$(curl -L -sS -o api.txt -w '%{http_code}' "$URL/api/stream?id=x" || true)
-          echo "api -> HTTP $code"
-          echo "--- api response ---"
-          head -c 2500 api.txt || true
-          echo
-          echo "--- end api response ---"
+          curl -L -sS -o /dev/null -w 'final URL: %{url_effective}\nfinal HTTP: %{http_code}\n' "$URL/"
