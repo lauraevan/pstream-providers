@@ -67,7 +67,7 @@ export async function addWyzieCaptions(
       display: subtitle.display,
       media: subtitle.media,
       isHearingImpaired: subtitle.isHearingImpaired,
-      source: typeof subtitle.source === 'number' ? subtitle.source.toString() : subtitle.source,
+      source: subtitle.source,
       encoding: subtitle.encoding,
     }));
 
