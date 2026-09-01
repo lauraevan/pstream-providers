@@ -12,7 +12,10 @@ export default defineConfig((env) => ({
   plugins: [
     env.mode !== 'test' && eslintPlugin(),
     dts({
-      rollupTypes: true,
+      // Keep the public entrypoint declarations intact. Rolling all declarations
+      // through API Extractor was producing an index.d.ts that dropped the
+      // package's named exports when installed from GitHub.
+      rollupTypes: false,
     }),
   ],
   css: {
